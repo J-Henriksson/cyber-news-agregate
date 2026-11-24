@@ -41,6 +41,13 @@ LLM_BATCH = int(os.environ.get("RADAR_LLM_BATCH", "20"))
 LLM_PRICE = (0.30, 2.50)
 
 
+def contact() -> str:
+    """How whoever runs this copy can be reached: an address or an e-mail,
+    from RADAR_CONTACT. Said only to a service that asks its readers for it
+    (Wikimedia). Empty: nothing is said."""
+    return os.environ.get("RADAR_CONTACT", "").strip()
+
+
 def gemini_key() -> str:
     """Read at call time, so a test or a shell can blank it."""
     return os.environ.get("GEMINI_API_KEY", "").strip()

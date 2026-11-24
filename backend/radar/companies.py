@@ -5,7 +5,12 @@ fortnight (a name Wikidata does not know is kept as unknown too).
 
 A name is matched to Wikidata's best search hit whose kind is a company
 or organisation; a name that is also a person or a place is left alone
-rather than guessed."""
+rather than guessed.
+
+Wikimedia asks a script to say what it is and how to reach whoever runs
+it, and turns away one that poses as a browser. So this reader names
+itself, adds RADAR_CONTACT when .env gives one, asks one thing at a time,
+and when it is refused it stops and waits rather than ask again."""
 
 from __future__ import annotations
 
@@ -14,13 +19,20 @@ import time
 
 import httpx
 
-from .config import USER_AGENT
+from . import config
 from .text import norm_name
 
 log = logging.getLogger(__name__)
 
 API = "https://www.wikidata.org/w/api.php"
 KEEP_S = 14 * 86400
+#: Where the store keeps until when Wikidata is left alone, and why.
+WAIT_KEY = "wikidata_wait"
+#: Not asked again for this long after a refusal, and after a request that did not get through.
+REFUSED_S = 3600.0
+FAILED_S = 300.0
+#: Between two names (Wikimedia: one request at a time, well under five a second).
+PAUSE_S = 1.0
 #: Instance-of values that make a hit a company or an organisation outright.
 ORG_KINDS = frozenset((
     "Q4830453", "Q783794", "Q6881511", "Q891723", "Q167037", "Q161726", "Q1058914", "Q18388277", "Q1589009",
@@ -56,15 +68,28 @@ def _quantity(entity: dict, prop: str) -> float | None:
     return best
 
 
+def user_agent() -> str:
+    """What this reader says it is: its name, a way to reach whoever runs
+    it if .env gives one, and its library. Never a browser's name."""
+    who = f" ({config.contact()})" if config.contact() else ""
+    return f"cyber-news-agregate/0.1{who} python-httpx/{httpx.__version__}"
+
+
+def _ask(client: httpx.Client, **params) -> dict:
+    """One question to Wikidata. A refusal is raised as what it is, not as an answer that will not parse."""
+    r = client.get(API, params={**params, "format": "json"})
+    r.raise_for_status()
+    return r.json()
+
+
 def lookup(client: httpx.Client, name: str) -> dict | None:
     """The company a name is, with the companies around it, or None."""
-    found = client.get(API, params={"action": "wbsearchentities", "search": name, "language": "en", "type": "item",
-                                    "limit": 5, "format": "json"}).json().get("search", [])
+    found = _ask(client, action="wbsearchentities", search=name, language="en", type="item", limit=5).get("search", [])
     if not found:
         return None
     ids = [h["id"] for h in found]
-    ents = client.get(API, params={"action": "wbgetentities", "ids": "|".join(ids), "props": "claims|labels|descriptions",
-                                   "languages": "en", "format": "json"}).json().get("entities", {})
+    ents = _ask(client, action="wbgetentities", ids="|".join(ids), props="claims|labels|descriptions",
+                languages="en").get("entities", {})
     hit = None
     for qid in ids:
         e = ents.get(qid) or {}
@@ -79,8 +104,7 @@ def lookup(client: httpx.Client, name: str) -> dict | None:
     want = sorted({q for qs in refs.values() for q in qs})[:50]
     labels = {}
     if want:
-        got = client.get(API, params={"action": "wbgetentities", "ids": "|".join(want), "props": "labels", "languages": "en",
-                                      "format": "json"}).json().get("entities", {})
+        got = _ask(client, action="wbgetentities", ids="|".join(want), props="labels", languages="en").get("entities", {})
         labels = {q: (v.get("labels", {}).get("en") or {}).get("value", q) for q, v in got.items()}
     named = {key: [labels.get(q, q) for q in refs[p]] for p, key in PROPS.items()}
     return {
@@ -97,9 +121,38 @@ def lookup(client: httpx.Client, name: str) -> dict | None:
     }
 
 
+def status(store) -> dict:
+    """How the lookups stand, for the Sources view: how many companies are
+    known, and if Wikidata is being left alone, why and until when."""
+    records = store.get_many("wd:")
+    wait = store.get(WAIT_KEY) or {}
+    waiting = (wait.get("until") or 0) > time.time()
+    return {"known": sum(1 for v in records.values() if not v.get("unknown")), "asked": len(records),
+            "error": wait.get("error") if waiting else None, "until": wait.get("until") if waiting else None,
+            "contact": bool(config.contact())}
+
+
+def _refused(err: Exception) -> tuple[str, float]:
+    """What went wrong, in a few words, and how long to leave Wikidata alone for it."""
+    if isinstance(err, httpx.HTTPStatusError):
+        wait = REFUSED_S
+        try:
+            # Its own word on when to come back counts, if it is longer.
+            wait = max(wait, float(err.response.headers.get("retry-after", "")))
+        except ValueError:
+            pass
+        return f"HTTP {err.response.status_code}", min(wait, 86400.0)
+    return (str(err) or type(err).__name__)[:120], FAILED_S
+
+
 def enrich(store, names: list[str], max_new: int = 12) -> int:
     """Look up the names not yet known (or known too long ago), at most
-    ``max_new`` in one round. Returns how many were looked up."""
+    ``max_new`` in one round. Returns how many were looked up. After a
+    refusal or a failure nothing is asked until the wait is over: the same
+    names asked again every round is what gets a reader turned away."""
+    wait = store.get(WAIT_KEY) or {}
+    if (wait.get("until") or 0) > time.time():
+        return 0
     todo = []
     for name in names:
         key = norm_name(name)
@@ -109,13 +162,19 @@ def enrich(store, names: list[str], max_new: int = 12) -> int:
             break
     if not todo:
         return 0
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=20) as client:
+    done = 0
+    with httpx.Client(headers={"User-Agent": user_agent()}, timeout=20) as client:
         for name in todo:
             try:
                 found = lookup(client, name)
             except (httpx.HTTPError, ValueError) as err:
-                log.info("wikidata %s: %s", name, err)
-                continue
+                why, wait_s = _refused(err)
+                store.put(WAIT_KEY, {"until": time.time() + wait_s, "error": why})
+                log.warning("wikidata: %s; not asked again for %d min", why, wait_s // 60)
+                return done
             store.put(f"wd:{norm_name(name)}", found or {"unknown": True}, bump=bool(found))
-            time.sleep(0.3)
-    return len(todo)
+            done += 1
+            time.sleep(PAUSE_S)
+    if wait:
+        store.put(WAIT_KEY, {})
+    return done

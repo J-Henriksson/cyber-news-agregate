@@ -37,6 +37,20 @@ export default function Sources({ tick }: { tick: number }) {
       </table>
       <h3>Not read</h3>
       <ul className="items">{data.not_read.map((n) => <li key={n.name}><b>{n.name}</b>: <span className="muted">{n.why}</span></li>)}</ul>
+      {!SNAPSHOT && data.wikidata && (
+        <>
+          <h3>Around the companies</h3>
+          <p className="small">
+            Wikidata (owners and subsidiaries):{" "}
+            {data.wikidata.error ? (
+              <><span className="state-bad">not answering ({data.wikidata.error})</span>, asked again at{" "}
+                {new Date((data.wikidata.until ?? 0) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+                {!data.wikidata.contact && " It asks a script to say how to reach whoever runs it: set RADAR_CONTACT in .env."}</>
+            ) : data.wikidata.asked === 0 ? "nothing looked up yet."
+              : <><span className="state-good">answering</span>, {data.wikidata.known} of {data.wikidata.asked} companies found.</>}
+          </p>
+        </>
+      )}
       <h3>The model</h3>
       {SNAPSHOT ? (
         <p className="small">{m.key ? `${m.name} reads the news beside the rules.` : "The rules alone read the items (known names only)."}</p>

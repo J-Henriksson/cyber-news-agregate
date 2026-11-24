@@ -12,6 +12,7 @@ from collections import Counter, defaultdict
 
 from . import profile as profile_mod
 from .cluster import cluster
+from .companies import status as companies_status
 from . import graphs
 from .gazetteer import placeholder
 from .money import DAMAGE_KINDS, FALLBACK_PER_EUR
@@ -446,6 +447,7 @@ class Radar:
                                                                     "RansomLook and the press"}],
             "model": {"name": LLM_MODEL, "key": bool(gemini_key()), "daily_calls": LLM_DAILY_CALLS, "today": today,
                       "cost_today_usd": round(cost, 4), "states": self.store.count_items()},
+            "wikidata": companies_status(self.store),
             "built_at": self.built_at, "build_seconds": self.build_seconds,
         }
 

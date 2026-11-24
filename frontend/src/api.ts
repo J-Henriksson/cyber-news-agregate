@@ -282,6 +282,8 @@ export interface SourcesView {
   busy: string[];
   polling: boolean;
   build_seconds: number;
+  /** The company lookups on Wikidata: how many are known, and why it is left alone if it is. */
+  wikidata?: { known: number; asked: number; error: string | null; until: number | null; contact: boolean };
   /** The read-only copy for GitHub Pages: whether one is made, and how the last went. */
   pages?: { on: boolean; last: { at: number; ok: boolean; error?: string; files?: number; bytes?: number; incidents?: number } | null };
 }

@@ -31,6 +31,9 @@ With a Gemini key in `.env` (copy `.env.example`) it also picks out company name
 and a one-line summary per story. Without a key it still works, with less detail. This is the
 only part that costs money: about a cent per call, capped at 60 calls a day.
 
+Owners and subsidiaries of the companies come from Wikidata, which refuses scripts that give
+no contact. Set `RADAR_CONTACT` in `.env` to a URL or an e-mail address to get them.
+
 ## Sources
 
 Security press, research blogs, CERT advisories, CISA's exploited-vulnerability list,
