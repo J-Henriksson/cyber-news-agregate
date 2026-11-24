@@ -1,7 +1,8 @@
 """The poller: a thread that reads every source whose time has come, then
 lets the model read the new items, scores the new CVEs' chance of being
 exploited (FIRST's EPSS), takes the day's exchange rates from the ECB,
-and looks up the companies the incidents name on Wikidata.
+looks up the companies the incidents name on Wikidata, and pushes the
+read-only copy of the page when one is due.
 
 When a source was last read is kept in the store, so a restart (uvicorn
 --reload) does not read everything again at once."""
@@ -15,7 +16,7 @@ import time
 
 import httpx
 
-from . import companies, llm
+from . import companies, llm, pages
 from .config import USER_AGENT
 from .extract import rules_of
 from .money import ECB_DAILY, parse_ecb
@@ -40,6 +41,7 @@ class Poller(threading.Thread):
         self.last_round: dict = {}
         #: Failures in a row, by source.
         self.fails: dict[str, int] = {}
+        self.pages = pages.Publisher(radar)
 
     def refresh(self) -> None:
         """Read every source now (one not read in the last two minutes)."""
@@ -120,6 +122,9 @@ class Poller(threading.Thread):
         await asyncio.to_thread(self.radar.incidents)
         self.last_round = {"at": time.time(), "read": [s.name for s in due], "model": did, "wikidata": looked,
                            "pruned": pruned}
+        # The read-only copy for GitHub Pages, when one is asked for and due (pages.py).
+        if self.pages.due(time.time()):
+            await asyncio.to_thread(self.pages.run)
 
     async def rates(self, client: httpx.AsyncClient) -> None:
         if self.store.get("fx", DAY / 2) is not None:

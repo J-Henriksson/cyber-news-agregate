@@ -209,7 +209,7 @@ KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulner
 async def fetch_kev(client: httpx.AsyncClient) -> list[dict]:
     """CISA's list of flaws known to be exploited. Items for the ones added
     within the kept days; the whole list is kept aside (kev_catalog) for
-    the exposure view."""
+    the brief's exploited flaws."""
     doc = (await _get(client, KEV_URL)).json()
     out = []
     for v in doc.get("vulnerabilities", []):

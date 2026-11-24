@@ -93,6 +93,14 @@ export interface NodeDetail {
   incidents: { id: string; title: string; category: Category; relevance: number; last_seen: number; role: string; usd: number | null; sources: number }[];
 }
 
+/** A read-only copy of the page (GitHub Pages): a tag in its index.html says when it was made,
+ *  and the data of every view lies beside it as files (backend radar/pages.py). Nothing is
+ *  starred, dismissed, noted or saved in a copy, and it does not change until it is replaced. */
+const copyTag = document.querySelector<HTMLMetaElement>('meta[name="radar-snapshot"]');
+export const SNAPSHOT = copyTag ? { at: Number(copyTag.content), midnight: Number(copyTag.dataset.midnight) } : null;
+/** Now, in epoch seconds. For a copy: the moment it was made, where its windows end. */
+export const nowS = () => (SNAPSHOT ? SNAPSHOT.at : Date.now() / 1000);
+
 const deskQ = (desk: Desk) => (desk ? `&desk=${desk}` : "");
 /** Query for a window: the last ``days``, or since the moment ``since`` (epoch seconds). */
 const winQ = (days: number, since?: number) => (since !== undefined ? `since=${Math.floor(since)}&days=${days}` : `days=${days}`);
@@ -120,28 +128,99 @@ function query(p: Record<string, string | number | undefined>): string {
   return q.toString();
 }
 
+// -- a copy's files ---------------------------------------------------------------------------
+
+type FeedView = { total: number; categories: Record<string, number>; incidents: Brief[] };
+type FeedQuery = Record<string, string | number | undefined>;
+
+/** One file of a copy: "feed", "graph-us-14-all", "incident/abc123". */
+const file = <T>(name: string) => get<T>(`data/${name}.json?v=${SNAPSHOT!.at}`);
+/** A view's file for a window ("today", "14") and a desk ("all", "cyber", "ai"). */
+const fileAt = (view: string, days: number, desk: Desk, since?: number) =>
+  `${view}-${since !== undefined ? "today" : days}-${desk || "all"}`;
+
+/** Every row of a copy, with ``hay``: what the search reads. Fetched once. */
+let feedRows: Promise<(Brief & { hay: string })[]> | undefined;
+const nodeFiles = new Map<string, Promise<Record<string, NodeDetail>>>();
+
+/** The feed of a copy, cut in the browser the way the server cuts it (engine.py: window, feed, top_score). */
+async function feedOfCopy(p: FeedQuery): Promise<FeedView> {
+  feedRows ??= file<{ rows: (Brief & { hay: string })[] }>("feed").then((d) => d.rows);
+  feedRows.catch(() => { feedRows = undefined; });
+  const all = await feedRows;
+  const now = SNAPSHOT!.at;
+  const start = p.since !== undefined ? Number(p.since) : now - Number(p.days ?? 14) * 86400;
+  const base = all.filter((r) => r.last_seen >= start && (!p.desk || r.topics.includes(String(p.desk))));
+  let rows = base;
+  if (p.category) rows = rows.filter((r) => r.category === p.category);
+  if (p.kinds) {
+    const want = String(p.kinds).split(",");
+    rows = rows.filter((r) => r.kinds.some((k) => want.includes(k)));
+  }
+  const words = String(p.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length) rows = rows.filter((r) => words.every((w) => r.hay.includes(w)));
+  const least = Number(p.min_relevance ?? 0);
+  if (least) rows = rows.filter((r) => r.relevance >= least);
+  // "Top": relevance, half of its fading part gone every three days.
+  const top = (r: Brief) => r.relevance * (0.5 + 0.5 * 0.5 ** (Math.max(0, now - r.last_seen) / 86400 / 3)) + Math.min(r.sources.length, 6) * 0.3;
+  const orders: Record<string, (a: Brief, b: Brief) => number> = {
+    recent: (a, b) => b.last_seen - a.last_seen,
+    money: (a, b) => (b.headline_usd ?? 0) - (a.headline_usd ?? 0),
+    relevance: (a, b) => b.relevance - a.relevance || b.sources.length - a.sources.length || b.last_seen - a.last_seen,
+  };
+  rows = [...rows].sort(orders[String(p.sort)] ?? ((a, b) => top(b) - top(a)));
+  const categories: Record<string, number> = {};
+  for (const r of base) categories[r.category] = (categories[r.category] ?? 0) + 1;
+  return { total: rows.length, categories, incidents: rows.slice(0, Number(p.limit ?? 300)) };
+}
+
+/** What stands behind a mark of a copy's graph: one file holds every mark of a window and desk. */
+async function nodeOfCopy(id: string, days: number, desk: Desk, since?: number): Promise<NodeDetail> {
+  const name = fileAt("nodes", days, desk, since);
+  let all = nodeFiles.get(name);
+  if (!all) {
+    all = file<Record<string, NodeDetail>>(name);
+    nodeFiles.set(name, all);
+    all.catch(() => nodeFiles.delete(name));
+  }
+  const found = (await all)[id];
+  if (!found) throw new Error("nothing in this window stands behind that mark");
+  return found;
+}
+
+const readOnly = () => Promise.reject(new Error("a copy of the page is read-only"));
+
 export const api = {
-  feed: (p: Record<string, string | number | undefined>) =>
-    get<{ total: number; categories: Record<string, number>; incidents: Brief[] }>(`/api/feed?${query(p)}`),
+  feed: (p: FeedQuery) => (SNAPSHOT ? feedOfCopy(p) : get<FeedView>(`/api/feed?${query(p)}`)),
   /** A link that downloads what the same filters show, as a file. */
-  exportUrl: (format: "csv" | "json", p: Record<string, string | number | undefined>) => `/api/export?${query({ ...p, format })}`,
-  brief: (hours: number, desk: Desk, since?: number) =>
-    get<BriefView>(`/api/brief?${query({ hours, desk, since: since !== undefined ? Math.floor(since) : undefined })}`),
-  incident: (id: string) => get<Incident>(`/api/incident/${id}`),
+  exportUrl: (format: "csv" | "json", p: FeedQuery) => `/api/export?${query({ ...p, format })}`,
+  brief: (hours: number, desk: Desk, since?: number) => (SNAPSHOT
+    ? file<BriefView>(`brief-${since !== undefined ? "today" : hours}-${desk || "all"}`)
+    : get<BriefView>(`/api/brief?${query({ hours, desk, since: since !== undefined ? Math.floor(since) : undefined })}`)),
+  incident: (id: string) => (SNAPSHOT ? file<Incident>(`incident/${encodeURIComponent(id)}`) : get<Incident>(`/api/incident/${id}`)),
   setState: async (id: string, change: Partial<{ starred: boolean; dismissed: boolean; seen: boolean; note: string }>) => {
+    if (SNAPSHOT) return readOnly() as Promise<State>;
     const r = await fetch(`/api/incident/${id}/state`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json() as Promise<State>;
   },
-  graph: (lens: Lens, days: number, minRel: number, limit: number, desk: Desk, since?: number) =>
-    get<GraphData>(`/api/graph?lens=${lens}&${winQ(days, since)}&min_relevance=${minRel}&limit=${limit}${deskQ(desk)}`),
-  node: (id: string, days: number, desk: Desk, since?: number) =>
-    get<NodeDetail>(`/api/node?id=${encodeURIComponent(id)}&${winQ(days, since)}${deskQ(desk)}`),
-  companies: (days: number, desk: Desk, since?: number) => get<{ companies: CompanyRow[] }>(`/api/companies?${winQ(days, since)}${deskQ(desk)}`),
-  money: (days: number, desk: Desk, since?: number) => get<MoneyView>(`/api/money?${winQ(days, since)}${deskQ(desk)}`),
-  timeline: (days: number, desk: Desk, since?: number) => get<TimelineView>(`/api/timeline?${winQ(days, since)}${deskQ(desk)}`),
-  exposure: (days: number, since?: number) => get<ExposureView>(`/api/exposure?${winQ(days, since)}`),
-  sources: () => get<SourcesView>(`/api/sources`),
+  /** In a copy the graph's least relevance and size stand at what the copy was made with. */
+  graph: (lens: Lens, days: number, minRel: number, limit: number, desk: Desk, since?: number) => (SNAPSHOT
+    ? file<GraphData>(fileAt(`graph-${lens}`, days, desk, since))
+    : get<GraphData>(`/api/graph?lens=${lens}&${winQ(days, since)}&min_relevance=${minRel}&limit=${limit}${deskQ(desk)}`)),
+  node: (id: string, days: number, desk: Desk, since?: number) => (SNAPSHOT
+    ? nodeOfCopy(id, days, desk, since)
+    : get<NodeDetail>(`/api/node?id=${encodeURIComponent(id)}&${winQ(days, since)}${deskQ(desk)}`)),
+  companies: (days: number, desk: Desk, since?: number) => (SNAPSHOT
+    ? file<{ companies: CompanyRow[] }>(fileAt("companies", days, desk, since))
+    : get<{ companies: CompanyRow[] }>(`/api/companies?${winQ(days, since)}${deskQ(desk)}`)),
+  money: (days: number, desk: Desk, since?: number) => (SNAPSHOT
+    ? file<MoneyView>(fileAt("money", days, desk, since))
+    : get<MoneyView>(`/api/money?${winQ(days, since)}${deskQ(desk)}`)),
+  timeline: (days: number, desk: Desk, since?: number) => (SNAPSHOT
+    ? file<TimelineView>(fileAt("timeline", days, desk, since))
+    : get<TimelineView>(`/api/timeline?${winQ(days, since)}${deskQ(desk)}`)),
+  sources: () => (SNAPSHOT ? file<SourcesView>("sources") : get<SourcesView>(`/api/sources`)),
   profile: () => get<Profile>(`/api/profile`),
   saveProfile: async (p: Profile) => {
     const r = await fetch(`/api/profile`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
@@ -175,17 +254,17 @@ export interface TimelineView {
   incidents: { id: string; title: string; category: Category; relevance: number; first_seen: number; sources: number; usd: number | null }[];
 }
 
-export interface ExposureView {
-  since: string; stack: string[];
-  rows: { cve: string; vendor: string; product: string; name: string; added: string; ransomware_use: string; ours: boolean;
-    epss: number | null; percentile: number | null; incidents: { id: string; title: string; relevance: number }[] }[];
+/** A flaw CISA lists as exploited, in software of our stack. */
+export interface ExploitedFlaw {
+  cve: string; vendor: string; product: string; name: string; added: string; ransomware_use: string; ours: boolean;
+  epss: number | null; percentile: number | null; incidents: { id: string; title: string; relevance: number }[];
 }
 
 export interface BriefView {
   since: number;
   counts: { incidents: number; by_category: Record<string, number>; high: number; sources: number };
   top: Brief[];
-  exploited: ExposureView["rows"];
+  exploited: ExploitedFlaw[];
   money: MoneyView["facts"];
   trending: { name: string; kind: string; today: number; daily_before: number; incident: { id: string; title: string; relevance: number } }[];
   tools: Brief[];
@@ -203,6 +282,8 @@ export interface SourcesView {
   busy: string[];
   polling: boolean;
   build_seconds: number;
+  /** The read-only copy for GitHub Pages: whether one is made, and how the last went. */
+  pages?: { on: boolean; last: { at: number; ok: boolean; error?: string; files?: number; bytes?: number; incidents?: number } | null };
 }
 
 export interface Interest { name: string; project: string; points: number; keywords: string[] }

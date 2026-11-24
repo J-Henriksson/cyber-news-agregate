@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ago, catColor, count, KIND_LABEL, safeUrl, usd, type Incident } from "../api";
+import { api, ago, catColor, count, KIND_LABEL, safeUrl, SNAPSHOT, usd, type Incident } from "../api";
 import { incidentMarkdown } from "../lib/markdown";
 
 const ROLE_ORDER = ["victim", "attacker", "vendor", "mentioned"];
@@ -28,11 +28,12 @@ export default function IncidentPanel({ id, tick, onClose, onSelect, refresh }: 
       setInc(next);
       setNote(next.state.note ?? "");
       // Opening it is reading it: from now on "updated" means told again since.
-      if (seenFor.current !== next.id) {
+      if (!SNAPSHOT && seenFor.current !== next.id) {
         seenFor.current = next.id;
         api.setState(next.id, { seen: true }).catch(() => undefined);
       }
-    }).catch(() => setError("This incident is no longer in the store (its reports aged out, or it was regrouped)."));
+    }).catch(() => setError(SNAPSHOT ? "This incident is not in this copy of the page (its reports aged out, or it was regrouped since)."
+      : "This incident is no longer in the store (its reports aged out, or it was regrouped)."));
   }, [id]);
 
   // Something changed on the server: read it again (the server follows an
@@ -57,9 +58,9 @@ export default function IncidentPanel({ id, tick, onClose, onSelect, refresh }: 
   return (
     <aside className="panel" aria-label="Incident">
       <div className="panel-acts">
-        <button className={`btn ${inc.state.starred ? "on" : ""}`} onClick={() => set({ starred: !inc.state.starred })}>{inc.state.starred ? "★ Starred" : "☆ Star"}</button>
-        <button className={`btn ${inc.state.dismissed ? "on" : ""}`} onClick={() => set({ dismissed: !inc.state.dismissed })}
-          title="Not for us: leaves every view (find it again under Feed, Dismissed)">{inc.state.dismissed ? "Dismissed: bring back" : "Dismiss"}</button>
+        {!SNAPSHOT && <button className={`btn ${inc.state.starred ? "on" : ""}`} onClick={() => set({ starred: !inc.state.starred })}>{inc.state.starred ? "★ Starred" : "☆ Star"}</button>}
+        {!SNAPSHOT && <button className={`btn ${inc.state.dismissed ? "on" : ""}`} onClick={() => set({ dismissed: !inc.state.dismissed })}
+          title="Not for us: leaves every view (find it again under Feed, Dismissed)">{inc.state.dismissed ? "Dismissed: bring back" : "Dismiss"}</button>}
         <button className="btn" onClick={copy} title="Copy as Markdown, for a chat, a ticket or a mail">{copied ? "Copied" : "Copy"}</button>
         <span className="spacer" />
         <button className="btn" onClick={onClose}>Close</button>
@@ -169,9 +170,13 @@ export default function IncidentPanel({ id, tick, onClose, onSelect, refresh }: 
         </>
       )}
 
-      <h3>Note</h3>
-      <textarea className="note-box" value={note} placeholder="A note for yourself; it shows in the lists and in the copy"
-        onChange={(e) => setNote(e.target.value)} onBlur={() => note !== (inc.state.note ?? "") && set({ note })} />
+      {!SNAPSHOT && (
+        <>
+          <h3>Note</h3>
+          <textarea className="note-box" value={note} placeholder="A note for yourself; it shows in the lists and in the copy"
+            onChange={(e) => setNote(e.target.value)} onBlur={() => note !== (inc.state.note ?? "") && set({ note })} />
+        </>
+      )}
 
       <h3>Sources ({inc.items.length})</h3>
       <ul className="items">

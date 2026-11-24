@@ -46,5 +46,24 @@ def gemini_key() -> str:
     return os.environ.get("GEMINI_API_KEY", "").strip()
 
 
+#: Where the read-only copy of the page is made before it is pushed (pages.py).
+PAGES_DIR = DATA / "pages"
+PAGES_BRANCH = os.environ.get("RADAR_PAGES_BRANCH", "gh-pages")
+#: Minutes between copies while the app runs (0: only the one after a start).
+PAGES_EVERY_MIN = float(os.environ.get("RADAR_PAGES_EVERY_MIN", "60"))
+
+
+def pages_remote() -> str:
+    """Where the copy is pushed: a remote of this repository ("origin") or
+    an address. Empty: no copy is made."""
+    return os.environ.get("RADAR_PAGES", "").strip()
+
+
+def pages_withhold() -> list[str]:
+    """Words the copy must not hold (comma-separated): an incident that
+    writes one is left out of it."""
+    return [w.strip().lower() for w in os.environ.get("RADAR_PAGES_WITHHOLD", "").split(",") if w.strip()]
+
+
 def polling_on() -> bool:
     return os.environ.get("RADAR_POLL", "1") != "0"

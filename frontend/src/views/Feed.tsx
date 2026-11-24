@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
-import { api, CATEGORIES, cssVar, type Brief } from "../api";
+import { api, CATEGORIES, cssVar, nowS, SNAPSHOT, type Brief } from "../api";
 import IncidentRow from "../components/IncidentRow";
 import { hideTip, showTip } from "../lib/tip";
 import { useWidth } from "../lib/useWidth";
@@ -55,8 +55,8 @@ export default function Feed({ days, since, q, tick, selected, onSelect, fresh, 
         setCursor(next);
         listRef.current?.querySelector(`[data-id="${rows[next]?.id}"]`)?.scrollIntoView({ block: "nearest" });
       } else if ((e.key === "Enter" || e.key === "o") && at) onSelect(at.id);
-      else if (e.key === "s" && at) api.setState(at.id, { starred: !at.state.starred }).then(refresh);
-      else if (e.key === "x" && at) api.setState(at.id, { dismissed: !at.state.dismissed }).then(refresh);
+      else if (e.key === "s" && at && !SNAPSHOT) api.setState(at.id, { starred: !at.state.starred }).then(refresh);
+      else if (e.key === "x" && at && !SNAPSHOT) api.setState(at.id, { dismissed: !at.state.dismissed }).then(refresh);
       else return;
       e.preventDefault();
     };
@@ -65,7 +65,8 @@ export default function Feed({ days, since, q, tick, selected, onSelect, fresh, 
   }, []);
 
   const empty = show === "starred" ? "Nothing starred in this window." : show === "updated" ? "Nothing you opened has been told again."
-    : show === "dismissed" ? "Nothing dismissed in this window." : `Nothing ${since !== undefined ? "today" : "in this window"} yet. The sources are read every 15 to 60 minutes.`;
+    : show === "dismissed" ? "Nothing dismissed in this window."
+      : `Nothing ${since !== undefined ? "today" : "in this window"} yet.${SNAPSHOT ? "" : " The sources are read every 15 to 60 minutes."}`;
 
   return (
     <div className={`view ${loading ? "busy" : ""}`}>
@@ -78,14 +79,16 @@ export default function Feed({ days, since, q, tick, selected, onSelect, fresh, 
         <span className="seg" role="group" aria-label="Order">
           {SORTS.map(([k, name]) => <button key={k} className={`btn ${sort === k ? "on" : ""}`} title={SORT_HELP[k]} onClick={() => setSort(k)}>{name}</button>)}
         </span>
-        <span className="seg" role="group" aria-label="Show">
-          {SHOWS.map(([k, name]) => <button key={k} className={`btn ${show === k ? "on" : ""}`} onClick={() => setShow(k)}>{name}</button>)}
-        </span>
+        {!SNAPSHOT && (
+          <span className="seg" role="group" aria-label="Show">
+            {SHOWS.map(([k, name]) => <button key={k} className={`btn ${show === k ? "on" : ""}`} onClick={() => setShow(k)}>{name}</button>)}
+          </span>
+        )}
         <label className="label"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> leave out what is only claimed</label>
         <span className="label">{total} incident{total === 1 ? "" : "s"}{total > rows.length ? `, top ${rows.length} shown` : ""}</span>
         <span className="spacer" />
-        <a className="btn" href={api.exportUrl("csv", filters)} download>CSV</a>
-        <a className="btn" href={api.exportUrl("json", filters)} download>JSON</a>
+        {!SNAPSHOT && <a className="btn" href={api.exportUrl("csv", filters)} download>CSV</a>}
+        {!SNAPSHOT && <a className="btn" href={api.exportUrl("json", filters)} download>JSON</a>}
       </div>
       {failed && <div className="empty">The feed could not be read. It is tried again when the backend answers.</div>}
       {!loading && !failed && rows.length === 0 && <div className="empty">{empty}</div>}
@@ -113,7 +116,7 @@ function Scatter({ rows, days, since, selected, fresh, onSelect }: {
   useEffect(() => {
     const svg = d3.select(ref.current!);
     svg.selectAll("*").remove();
-    const now = Date.now() / 1000;
+    const now = nowS();
     const start = since ?? now - days * 86400;
     const x = d3.scaleTime().domain([new Date(start * 1000), new Date(now * 1000)]).range([m.l, width - m.r]);
     const y = d3.scaleLinear().domain([0, 100]).range([height - m.b, m.t]);

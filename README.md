@@ -25,6 +25,31 @@ For work on the page: `cd frontend && npm run dev` serves it on :5740 with the A
 to :8740. Tests: `cd backend && uv run pytest`. A walk of the running page in a headless
 browser: `uv run --with playwright==1.62.0 python tools/walk.py`.
 
+## A copy on GitHub Pages
+
+A read-only copy of the page can be kept on GitHub Pages, to read from anywhere. It is made
+and pushed from this machine while the app runs: once when the sources have been read after
+a start, then every hour when something changed (`RADAR_PAGES_EVERY_MIN`; 0 for only the
+copy after a start). Turn it on in `.env`:
+
+```bash
+RADAR_PAGES=origin    # a remote of this repository, or an address
+```
+
+The copy is the one commit of the branch `gh-pages`, replaced each time. Once, in the
+repository's settings on GitHub: Pages, deploy from the branch `gh-pages`, folder `/`. On
+GitHub's free plan Pages needs a public repository. By hand:
+`cd backend && uv run python -m radar.pages` (`--no-push` only makes it, in `data/pages`).
+The Sources view says when the last copy went out, or why it did not.
+
+The copy is the same page reading its data from files, as it stood when it was made: its
+windows end there and "Today" is that day. It cannot star, dismiss, note, alert or read
+now, has no Profile view, and its graph shows the top 120 incidents of relevance 10 or
+more. It leaves out what is the reader's own (stars, notes), the model's calls and spend,
+what was dismissed, and every incident that writes a word of `RADAR_PAGES_WITHHOLD`. It is
+public: anyone with the address reads it, and the reason beside each score shows what the
+profile holds.
+
 ## The page
 
 The top bar picks the **desk** (All, Cyber, AI) and the **window**: Today (since midnight on
@@ -39,7 +64,6 @@ holds them, so a link or a reload opens the same place.
 | Companies | The companies hit (or whose software was), by sector, as a map or a table; their parents, subsidiaries and the companies hit alongside them |
 | Money | Every amount a source stated, in dollars, by kind (stolen, ransom asked or paid, loss, fine, settlement), with the words it was stated in |
 | Timeline | Incidents by day (by hour for Today) and kind, and each group's incidents on its own lane |
-| Exposure | Flaws CISA lists as exploited, in the software of our stack, with their EPSS score and the news about them |
 | Sources | What each source last answered, what is not read and why, the model's calls and spend |
 | Profile | Who "us" is: the profile relevance is scored against |
 
@@ -134,4 +158,5 @@ day's calls and spend. Without a key it runs on the rules alone for nothing.
   name or wording stay apart; two different stories that share them can join.
 - **A leak-site post is a claim.** It is marked as one and scores less until something
   confirms it.
-- **The page is for this machine.** The API answers only to 127.0.0.1 and has no logins.
+- **The page is for this machine.** The API answers only to 127.0.0.1 and has no logins. The copy on GitHub
+  Pages is the one thing meant for elsewhere, and it only reads.

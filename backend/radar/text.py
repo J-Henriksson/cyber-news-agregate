@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import html
 import re
 
@@ -38,8 +39,10 @@ def clean(text: str | None, limit: int | None = None) -> str:
     return out
 
 
+@functools.lru_cache(maxsize=1 << 16)
 def norm_name(name: str) -> str:
-    """A name as a key: lowercase, no company suffix, no punctuation edges."""
+    """A name as a key: lowercase, no company suffix, no punctuation edges.
+    Remembered: the views ask it of the same names over and over."""
     n = _SPACE.sub(" ", name).strip().strip(".,;:'\"()[]")
     # "The Gentlemen" and "Gentlemen" are one gang, "the BBC" is the BBC.
     if n[:4].lower() == "the " and len(n) > 6:

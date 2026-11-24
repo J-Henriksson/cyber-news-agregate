@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, watchReach, type Desk, type SourcesView } from "./api";
+import { ago, api, SNAPSHOT, watchReach, type Desk, type SourcesView } from "./api";
 import IncidentPanel from "./components/IncidentPanel";
 import BriefView from "./views/Brief";
 import Feed from "./views/Feed";
@@ -7,7 +7,6 @@ import Graph from "./views/Graph";
 import Companies from "./views/Companies";
 import Money from "./views/Money";
 import Timeline from "./views/Timeline";
-import Exposure from "./views/Exposure";
 import Sources from "./views/Sources";
 import ProfileView from "./views/Profile";
 
@@ -18,13 +17,14 @@ const VIEWS = [
   ["companies", "Companies"],
   ["money", "Money"],
   ["timeline", "Timeline"],
-  ["exposure", "Exposure"],
 ] as const;
-const ADMIN = [
+const ADMIN_ALL = [
   ["sources", "Sources"],
   ["profile", "Profile"],
 ] as const;
-type View = (typeof VIEWS)[number][0] | (typeof ADMIN)[number][0];
+// A copy has no profile to edit: who "us" is stays on the machine that made it.
+const ADMIN = ADMIN_ALL.filter(([k]) => !SNAPSHOT || k !== "profile");
+type View = (typeof VIEWS)[number][0] | (typeof ADMIN_ALL)[number][0];
 const ALL_VIEWS = [...VIEWS, ...ADMIN].map(([k]) => k) as readonly string[];
 /** 0 is "today": since midnight, by this computer's clock. */
 const WINDOWS = [0, 3, 7, 14, 30, 90];
@@ -121,6 +121,8 @@ export default function App() {
   useEffect(() => {
     watchReach(setReachable);
     loadStatus();
+    // A copy does not change while it is open: nothing to listen for.
+    if (SNAPSHOT) return;
     // The backend pushes; this only keeps "read 3 min ago" in the status current.
     const t = setInterval(loadStatus, 5 * 60_000);
     const events = new EventSource("/api/events");
@@ -206,7 +208,7 @@ export default function App() {
   const failing = status?.sources.filter((s) => s.error).length ?? 0;
   const pending = status?.model.states.pending ?? 0;
   // Today: the views ask for what was told since midnight (worked out afresh each time).
-  const since = days === 0 ? midnight() : undefined;
+  const since = days === 0 ? (SNAPSHOT ? SNAPSHOT.midnight : midnight()) : undefined;
   const label = days === 0 ? "today" : `the last ${days} days`;
   const props: ViewProps = { days: days === 0 ? 1 : days, since, label, q, tick, selected, onSelect: open, fresh, desk, refresh };
   const freshTop = [...fresh.values()].sort((a, b) => b.relevance - a.relevance)[0];
@@ -215,7 +217,6 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <span className="brand">cyber<b>/</b>radar</span>
         <span className="seg" role="group" aria-label="Desk">
           {([["", "All"], ["cyber", "Cyber"], ["ai", "AI"]] as const).map(([k, name]) => (
             <button key={k} className={`btn ${desk === k ? "on" : ""}`} aria-pressed={desk === k} onClick={() => go({ desk: k })}>{name}</button>
@@ -235,7 +236,14 @@ export default function App() {
             {fresh.size} new{freshTop && freshTop.relevance >= 40 ? `, top ${freshTop.relevance}` : ""}
           </button>
         )}
-        {status && (
+        {SNAPSHOT && (
+          <span className="health copy" title={`A read-only copy of the page as it stood ${new Date(SNAPSHOT.at * 1000).toLocaleString()}. Its windows end there, and "Today" is that day.`}>
+            <i className="lamp" />
+            Copy, made {ago(SNAPSHOT.at)}
+            {status && <span>{status.sources.length - failing}/{status.sources.length} sources</span>}
+          </span>
+        )}
+        {!SNAPSHOT && status && (
           <span className={`health ${live ? "" : "down"}`}
             title={[`${status.sources.length - failing} of ${status.sources.length} sources answering`,
               status.model.key ? `model: ${status.model.today.calls} of ${status.model.daily_calls} calls today, ${pending} items waiting` : "no model key: the rules alone read the items",
@@ -247,14 +255,19 @@ export default function App() {
             {status.busy.length > 0 && <span>reading {status.busy.length}</span>}
           </span>
         )}
-        <button className={`btn ${alerts ? "on" : ""}`} onClick={toggleAlerts} disabled={alertsBlocked} aria-pressed={alerts}
-          title={alertsBlocked ? "This browser blocks notifications for this page" : `A desktop alert for each new incident of relevance ${ALERT_AT} or more`}>
-          Alerts {alerts ? "on" : "off"}
-        </button>
-        <button className="btn" onClick={() => api.refresh()} title="Read every source not read in the last two minutes">Read now</button>
+        {!SNAPSHOT && (
+          <>
+            <button className={`btn ${alerts ? "on" : ""}`} onClick={toggleAlerts} disabled={alertsBlocked} aria-pressed={alerts}
+              title={alertsBlocked ? "This browser blocks notifications for this page" : `A desktop alert for each new incident of relevance ${ALERT_AT} or more`}>
+              Alerts {alerts ? "on" : "off"}
+            </button>
+            <button className="btn" onClick={() => api.refresh()} title="Read every source not read in the last two minutes">Read now</button>
+          </>
+        )}
       </header>
       {!reachable && (
-        <div className="banner" role="alert">The backend is not answering. Start it with ./run.sh in the cyber-news-agregate folder; the page reconnects by itself.</div>
+        <div className="banner" role="alert">{SNAPSHOT ? "The page's data could not be fetched. Check the connection and reload."
+          : "The backend is not answering. Start it with ./run.sh in the cyber-news-agregate folder; the page reconnects by itself."}</div>
       )}
       <nav className="nav" aria-label="Views">
         {VIEWS.map(([k, name]) => (
@@ -271,8 +284,8 @@ export default function App() {
         <div className="keys" aria-hidden="true">
           <span><kbd>/</kbd> search</span>
           <span><kbd>j</kbd> <kbd>k</kbd> move</span>
-          <span><kbd>s</kbd> star</span>
-          <span><kbd>x</kbd> dismiss</span>
+          {!SNAPSHOT && <span><kbd>s</kbd> star</span>}
+          {!SNAPSHOT && <span><kbd>x</kbd> dismiss</span>}
           <span><kbd>Esc</kbd> close</span>
         </div>
       </nav>
@@ -283,9 +296,8 @@ export default function App() {
         {view === "companies" && <Companies {...props} />}
         {view === "money" && <Money {...props} />}
         {view === "timeline" && <Timeline {...props} />}
-        {view === "exposure" && <Exposure {...props} />}
         {view === "sources" && <Sources tick={tick} />}
-        {view === "profile" && <ProfileView onSaved={refresh} />}
+        {view === "profile" && !SNAPSHOT && <ProfileView onSaved={refresh} />}
         {selected && <IncidentPanel id={selected} tick={tick} onClose={close} onSelect={open} refresh={refresh} />}
       </main>
     </div>

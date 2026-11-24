@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ago, KIND_LABEL, usd, type Brief, type BriefView as BriefData } from "../api";
+import { api, ago, KIND_LABEL, SNAPSHOT, usd, type Brief, type BriefView as BriefData } from "../api";
 import IncidentRow from "../components/IncidentRow";
 import { CLASSES, classOf } from "../lib/viz";
 import type { ViewProps } from "../App";
@@ -43,10 +43,10 @@ export default function BriefView({ days, since, label, tick, selected, onSelect
           <span className="tile-label">Relevance 50 or more</span><b className="tile-value">{data.counts.high}</b>
           <span className="tile-sub">touch the profile closely</span>
         </button>
-        <button className="tile" onClick={() => onView("exposure")}>
+        <div className="tile">
           <span className="tile-label">Exploited in our stack</span><b className="tile-value">{data.exploited.length}</b>
           <span className="tile-sub">added by CISA in 7 days</span>
-        </button>
+        </div>
         <button className="tile" onClick={() => onView("graph")}>
           <span className="tile-label">Named more than usual</span><b className="tile-value">{data.trending.length}</b>
           <span className="tile-sub">groups, companies, flaws</span>
@@ -86,7 +86,6 @@ export default function BriefView({ days, since, label, tick, selected, onSelect
                 </tbody>
               </table>
             )}
-            <button className="btn more" onClick={() => onView("exposure")}>All exposure</button>
           </section>
 
           <section>
@@ -136,10 +135,12 @@ export default function BriefView({ days, since, label, tick, selected, onSelect
             </div>
           </section>
 
-          <section>
-            <h3>Starred</h3>
-            {rows(data.starred, "Nothing starred. Star an incident (s) to keep it here and see when it is told again.")}
-          </section>
+          {!SNAPSHOT && (
+            <section>
+              <h3>Starred</h3>
+              {rows(data.starred, "Nothing starred. Star an incident (s) to keep it here and see when it is told again.")}
+            </section>
+          )}
         </aside>
       </div>
     </div>

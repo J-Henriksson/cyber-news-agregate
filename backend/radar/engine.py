@@ -66,6 +66,7 @@ class Radar:
         self._key: tuple | None = None
         self._incidents: list[dict] = []
         self._by_id: dict[str, dict] = {}
+        self._makers: tuple[int, Counter] | None = None
         self.built_at = 0.0
         self.build_seconds = 0.0
         #: Counts the rebuilds: the event stream tells the page when it moves.
@@ -210,19 +211,27 @@ class Radar:
         """Other incidents of the last 60 days that share a victim, a group,
         a flaw or (when few stories name it) a maker with this one."""
         def keys(i: dict) -> set[str]:
-            out = {f"c:{c['id']}" for c in i["cves"]}
-            for e in i["entities"]:
-                if e["role"] in ("victim", "attacker") and not placeholder(e["name"]):
-                    out.add(f"{e['role'][0]}:{norm_name(e['name'])}")
-                elif e["role"] == "vendor":
-                    out.add(f"m:{norm_name(e['name'])}")
+            # Kept on the incident: every incident is asked for each one that is opened.
+            out = i.get("_keys")
+            if out is None:
+                out = {f"c:{c['id']}" for c in i["cves"]}
+                for e in i["entities"]:
+                    if e["role"] in ("victim", "attacker") and not placeholder(e["name"]):
+                        out.add(f"{e['role'][0]}:{norm_name(e['name'])}")
+                    elif e["role"] == "vendor":
+                        out.add(f"m:{norm_name(e['name'])}")
+                i["_keys"] = out
             return out
 
         mine = keys(inc)
         if not mine:
             return []
         since = time.time() - 60 * DAY
-        makers = Counter(k for i in self._incidents if i["last_seen"] >= since for k in keys(i) if k.startswith("m:"))
+        # How many stories name each maker, counted once per build of the list.
+        if self._makers is None or self._makers[0] != self.built:
+            self._makers = (self.built, Counter(k for i in self._incidents if i["last_seen"] >= since
+                                                for k in keys(i) if k.startswith("m:")))
+        makers = self._makers[1]
         mine = {k for k in mine if not k.startswith("m:") or makers[k] <= 12}
         found = []
         for other in self._incidents:

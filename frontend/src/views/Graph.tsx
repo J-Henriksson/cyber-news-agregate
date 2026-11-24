@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
-import { api, ago, count, cssVar, safeUrl, usd, type GraphData, type GraphNode, type Lens, type NodeDetail } from "../api";
+import { api, ago, count, cssVar, safeUrl, SNAPSHOT, usd, type GraphData, type GraphNode, type Lens, type NodeDetail } from "../api";
 import { layoutPacked, layoutUs, named, setRadii, short, type Mark } from "../lib/graphLayout";
 import { BAND_LABELS, bandColor, inkOn, shapePath, SHAPES, textWidth } from "../lib/viz";
 import { hideTip, showTip, type TipLine } from "../lib/tip";
@@ -405,16 +405,18 @@ export default function Graph({ days, since, q, tick, selected, onSelect, fresh,
           <span className="seg" role="group" aria-label="Size by">
             {SIZES.map(([k, name]) => <button key={k} className={`btn ${sizeBy === k ? "on" : ""}`} aria-pressed={sizeBy === k} onClick={() => setSizeBy(k)}>{name}</button>)}
           </span>
-          {(lens === "us" || lens === "links") && (
+          {!SNAPSHOT && (lens === "us" || lens === "links") && (
             <>
               <span className="label">relevance at least</span>
               <input type="range" min={0} max={80} step={5} value={minRel} aria-label="Least relevance" onChange={(e) => setMinRel(Number(e.target.value))} />
               <span className="mono small">{minRel}</span>
             </>
           )}
-          <select value={limit} aria-label="How many" onChange={(e) => setLimit(Number(e.target.value))}>
-            {[60, 120, 200, 300].map((n) => <option key={n} value={n}>up to {n}</option>)}
-          </select>
+          {!SNAPSHOT && (
+            <select value={limit} aria-label="How many" onChange={(e) => setLimit(Number(e.target.value))}>
+              {[60, 120, 200, 300].map((n) => <option key={n} value={n}>up to {n}</option>)}
+            </select>
+          )}
           <span className="spacer" />
           <span className="seg" role="group" aria-label="Show as">
             <button className={`btn ${!table ? "on" : ""}`} aria-pressed={!table} onClick={() => setTable(false)}>Graph</button>

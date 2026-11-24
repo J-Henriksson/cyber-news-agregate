@@ -148,15 +148,10 @@ def timeline(days: float = 30, desk: str | None = None, since: float | None = No
     return radar.timeline(days, desk, since)
 
 
-@app.get("/api/exposure")
-def exposure(days: float = 60, since: float | None = None):
-    return radar.exposure(days, since)
-
-
 @app.get("/api/sources")
 def sources():
     return radar.sources() | {"busy": sorted(poller.busy), "last_round": poller.last_round,
-                              "polling": config.polling_on()}
+                              "polling": config.polling_on(), "pages": poller.pages.status()}
 
 
 @app.get("/api/profile")

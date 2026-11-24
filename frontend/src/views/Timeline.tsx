@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
-import { api, cssVar, type TimelineView } from "../api";
+import { api, cssVar, nowS, type TimelineView } from "../api";
 import { CLASSES, classOf } from "../lib/viz";
 import { hideTip, showTip } from "../lib/tip";
 import { useWidth } from "../lib/useWidth";
@@ -38,7 +38,7 @@ export default function Timeline({ days, since, label, tick, onSelect, desk }: V
     if (!data || !bars.current || !lanes.current || table) return;
     const m = { l: 150, r: 14, t: 14, b: 24 };
     const muted = cssVar("--muted");
-    const end = new Date();
+    const end = new Date(nowS() * 1000);
     const start = new Date(data.start * 1000);
     const x = d3.scaleTime().domain([start, end]).range([m.l, width - m.r]).clamp(true);
     const per = data.bucket * 1000;

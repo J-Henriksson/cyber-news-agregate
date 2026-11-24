@@ -151,8 +151,8 @@ def test_the_api_serves_every_view(monkeypatch):
     assert [i["title"] for i in today["incidents"]] == ["Acme Corp confirms Akira attack"]
     hours = client.get(f"/api/timeline?since={NOW - 7200}").json()
     assert hours["bucket"] == 3600 and sum(sum(v for k, v in b.items() if k != "t") for b in hours["buckets"]) == 2
-    exposure = client.get("/api/exposure").json()
-    assert exposure["rows"][0]["ours"] is True
+    exploited = client.get("/api/brief").json()["exploited"]
+    assert exploited[0]["cve"] == "CVE-2026-9" and exploited[0]["ours"] is True
     assert client.get("/api/sources").json()["model"]["key"] is False
     assert client.get("/api/incident/nope").status_code == 404
 

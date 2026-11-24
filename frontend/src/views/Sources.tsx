@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ago, safeUrl, type SourcesView } from "../api";
+import { api, ago, safeUrl, SNAPSHOT, type SourcesView } from "../api";
 
 export default function Sources({ tick }: { tick: number }) {
   const [data, setData] = useState<SourcesView | null>(null);
@@ -14,6 +14,7 @@ export default function Sources({ tick }: { tick: number }) {
   return (
     <div className="view">
       <h2>Sources: {rows.length - failing} of {rows.length} answering</h2>
+      {SNAPSHOT && <p className="note">As they stood when this copy of the page was made, {ago(SNAPSHOT.at)}.</p>}
       <table className="grid">
         <thead><tr><th>Source</th><th>Desk</th><th>Kind</th><th>How far to trust it</th><th className="num">Every</th><th>Last read</th>
           <th className="num">Items</th><th className="num">Kept</th><th>State</th></tr></thead>
@@ -37,14 +38,29 @@ export default function Sources({ tick }: { tick: number }) {
       <h3>Not read</h3>
       <ul className="items">{data.not_read.map((n) => <li key={n.name}><b>{n.name}</b>: <span className="muted">{n.why}</span></li>)}</ul>
       <h3>The model</h3>
-      <p className="small">
-        {m.key ? <>{m.name}: {m.today.calls} of {m.daily_calls} calls today ({m.today.items} items, {m.today.failed} failed),
-          about ${m.cost_today_usd.toFixed(3)} at list price.</> : "No GEMINI_API_KEY in cyber-news-agregate/.env: the rules alone read the items (known names only)."}
-        {" "}Items: {Object.entries(m.states).map(([k, v]) => `${v} ${k === "skipped" ? "structured (no model needed)" : k}`).join(", ")}.
-        {m.today.last?.error && <span className="state-bad"> Last error: {m.today.last.error.slice(0, 160)}</span>}
-      </p>
+      {SNAPSHOT ? (
+        <p className="small">{m.key ? `${m.name} reads the news beside the rules.` : "The rules alone read the items (known names only)."}</p>
+      ) : (
+        <p className="small">
+          {m.key ? <>{m.name}: {m.today.calls} of {m.daily_calls} calls today ({m.today.items} items, {m.today.failed} failed),
+            about ${m.cost_today_usd.toFixed(3)} at list price.</> : "No GEMINI_API_KEY in cyber-news-agregate/.env: the rules alone read the items (known names only)."}
+          {" "}Items: {Object.entries(m.states).map(([k, v]) => `${v} ${k === "skipped" ? "structured (no model needed)" : k}`).join(", ")}.
+          {m.today.last?.error && <span className="state-bad"> Last error: {m.today.last.error.slice(0, 160)}</span>}
+        </p>
+      )}
       <p className="note">The model only names what an item's own text writes: a company or an amount it cannot quote from the item is dropped.
-        Incidents are rebuilt in {data.build_seconds} s whenever something new arrives.</p>
+        {!SNAPSHOT && ` Incidents are rebuilt in ${data.build_seconds} s whenever something new arrives.`}</p>
+      {!SNAPSHOT && data.pages?.on && (
+        <>
+          <h3>The copy on GitHub Pages</h3>
+          <p className="small">
+            {!data.pages.last ? "Not pushed yet since this start: it goes out when the sources have been read."
+              : data.pages.last.ok ? <><span className="state-good">pushed</span> {ago(data.pages.last.at)}: {data.pages.last.incidents?.toLocaleString()} incidents
+                in {data.pages.last.files?.toLocaleString()} files ({((data.pages.last.bytes ?? 0) / 1e6).toFixed(1)} MB).</>
+                : <span className="state-bad">not pushed {ago(data.pages.last.at)}: {data.pages.last.error}</span>}
+          </p>
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { api, ago, catColor, count, usd, type Brief } from "../api";
+import { api, ago, catColor, count, SNAPSHOT, usd, type Brief } from "../api";
 
 interface Props {
   r: Brief;
@@ -43,16 +43,18 @@ function IncidentRow({ r, on, cursor, isNew, compact, onSelect, refresh }: Props
           {claimed && <span className="flag">claim</span>}
           {r.roundup && <span className="flag">roundup</span>}
           <span className="row-when">{r.sources.length} source{r.sources.length === 1 ? "" : "s"} · {ago(r.last_seen)}</span>
-          <span className="acts">
-            <button className={`act ${r.state.starred ? "on" : ""}`} onClick={set({ starred: !r.state.starred })}
-              aria-label={r.state.starred ? "Remove the star" : "Star"} title={r.state.starred ? "Starred (s)" : "Star (s)"}>
-              {r.state.starred ? "★" : "☆"}
-            </button>
-            <button className="act" onClick={set({ dismissed: !r.state.dismissed })}
-              aria-label={r.state.dismissed ? "Bring back" : "Dismiss"} title={r.state.dismissed ? "Bring back (x)" : "Dismiss: not for us (x)"}>
-              {r.state.dismissed ? "↺" : "×"}
-            </button>
-          </span>
+          {!SNAPSHOT && (
+            <span className="acts">
+              <button className={`act ${r.state.starred ? "on" : ""}`} onClick={set({ starred: !r.state.starred })}
+                aria-label={r.state.starred ? "Remove the star" : "Star"} title={r.state.starred ? "Starred (s)" : "Star (s)"}>
+                {r.state.starred ? "★" : "☆"}
+              </button>
+              <button className="act" onClick={set({ dismissed: !r.state.dismissed })}
+                aria-label={r.state.dismissed ? "Bring back" : "Dismiss"} title={r.state.dismissed ? "Bring back (x)" : "Dismiss: not for us (x)"}>
+                {r.state.dismissed ? "↺" : "×"}
+              </button>
+            </span>
+          )}
         </div>
         <h4 className="row-title">{r.title}</h4>
         {!compact && r.summary && r.summary !== r.title && <p className="row-sum">{r.summary}</p>}
